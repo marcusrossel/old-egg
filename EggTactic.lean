@@ -1,21 +1,8 @@
 import EggTactic.Sexp
-import EggTactic.Tracing
 import EggTactic.Egraph
-import Lean.Meta.Tactic.Rewrite
-import Lean.Meta.Tactic.Refl
-import Lean.Meta.Tactic.Simp
-import Lean.Meta.Tactic.Replace
-import Lean.Elab.Tactic.Basic
-import Lean.Elab.Tactic.Rewrite
-import Lean.Elab.Tactic.ElabTerm
-import Lean.Elab.Tactic.Location
-import Lean.Elab.Tactic.Config
-import Lean.Data.Json
-import Lean.Elab.Deriving.FromToJson
+import Lean
 
-open Lean Elab Meta Tactic Term
-open IO
-open System
+open Lean Elab Meta Tactic Term IO
 
 --initialize registerTraceClass `EggTactic.egg
 
@@ -526,7 +513,7 @@ partial def addForallExplodedEquality_ (goal: MVarId)
   (mvars: Array MVarId)
   : EggM Unit := do
   tacticGuard ty.universallyQuantifiedEq? "**expected ∀ ... a = b**"
-  if let Expr.forallE x xty body _ := ty then do {
+  if let Expr.forallE x xty _ _ := ty then do {
   --trace[EggTactic.egg] "**forall is : (FA [{x} : {xty}] {body})"
    if toExplode.back then{
        withExprsOfType goal xty $ λ xval => do
@@ -601,7 +588,7 @@ def eggAddExprAsRewrite (goal: MVarId) (rw: Expr) (ty: Expr): EggM Unit := do
 
 -- Add all equalities from the local context
 def addAllLocalContextEqualities (goal: MVarId) (goals: List MVarId): EggM Unit :=
-  withMVarContext goal do
+  goal.withContext do
     trace[EggTactic.egg] "goals: {goals.map fun g => g.name}"
     for decl in (← getLCtx) do
       if decl.toExpr.isMVar && goals.contains (decl.toExpr.mvarId!)
@@ -706,12 +693,13 @@ def parseEggResponse (goal: MVarId) (varMapping : VariableMapping) (responseStri
 
 -- High level wrapped aroung runEggRequestRaw that is well-typed, and returns the
 -- list of explanations
-def runEggRequest (goal: MVarId) (request: EggRequest): MetaM (List Eggxplanation) :=
-  runEggRequestRaw request.toJson >>= (parseEggResponse goal request.varMapping)
+def runEggRequest (goal: MVarId) (request: EggRequest): MetaM (List Eggxplanation) := do
+  let response ← runEggRequestRaw request.toJson
+  parseEggResponse goal request.varMapping response
 
 -- Add rewrites with known names 'rewriteNames' from the local context of 'goalMVar'
 def addNamedRewrites (goalMVar: MVarId)  (rewriteNames: List Ident): EggM Unit :=
-  withMVarContext goalMVar do
+  goalMVar.withContext do
     trace[EggTactic.egg] " addNamedRewrites {goalMVar.name} {rewriteNames.map ToString.toString}"
     for decl in (← getLCtx) do
     -- TODO: find a way to not have to use strings, see how 'simp' does this.
@@ -745,7 +733,7 @@ partial def Lean.TSyntax.getEggConfig : TSyntax `eggconfig → EggConfig
   | `(eggconfig| $v:eggconfigval ) => v.updateEggConfig default
   | _ => panic! "unknown eggxplosion config syntax"
 
-elab "eggxplosion" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withMainContext do
+elab "egg" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withMainContext do
   trace[EggTactic.egg] (s!"0) Running Egg on '{← getMainTarget}'")
   let decls : List LocalDecl := (← getLCtx).decls.toList.filter Option.isSome |>.map Option.get!
   let idsnames := decls.map λ decl => (repr decl.fvarId, decl.userName)
@@ -765,11 +753,11 @@ elab "eggxplosion" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withM
   let rewrites ←  (addNamedRewrites (<- getMainGoal) (rewriteNames.getElems.toList)).getRewrites cfg
   trace[EggTactic.egg] "simplifying {(← exprToUntypedSexp goalLhs)} {(← exprToUntypedSexp goalRhs)} {rewrites}"
 
-  let (simplifiedLhs,simplifiedRhs,simplifiedRewrites,mapping) :=
+  let (simplifiedLhs, simplifiedRhs, simplifiedRewrites, mapping) ← do
     if cfg.simplifyExprs then
-       simplifyRequest (← exprToUntypedSexp goalLhs) (← exprToUntypedSexp goalRhs) rewrites
+      pure <| simplifyRequest (← exprToUntypedSexp goalLhs) (← exprToUntypedSexp goalRhs) rewrites
     else
-       (← exprToUntypedSexp goalLhs,← exprToUntypedSexp goalRhs,rewrites,[])
+      pure (← exprToUntypedSexp goalLhs, ← exprToUntypedSexp goalRhs, rewrites, [])
   trace[EggTactic.egg] "simplification result {simplifiedLhs} {simplifiedRhs} {simplifiedRewrites}"
   trace[EggTactic.egg] "simplification mapping {mapping}"
   let eggRequest := {
@@ -781,7 +769,9 @@ elab "eggxplosion" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withM
     varMapping := mapping
     : EggRequest
   }
+
   let explanations := (← runEggRequest (← getMainGoal) eggRequest)
+
   for e in explanations do
     trace[EggTactic.egg] (s!"14) applying rewrite explanation {e}")
     trace[EggTactic.egg] (s!"14.5) current goal: {(<- getMainGoal).name} : {(<- inferType (Expr.mvar (<- getMainGoal)))}")
@@ -800,7 +790,7 @@ elab "eggxplosion" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withM
     -- trace[EggTactic.egg] (s!"16) rewritten to: {rewriteResult.eNew} with proof: {rewriteResult.eqProof}")
     -- trace[EggTactic.egg] (s!"16) rewritten to: {e.result} with proof: {rewriteResult.eqProof}")
     -- let goal' ← replaceTargetEq (<- getMainGoal) rewriteResult.eNew rewriteResult.eqProof
-    let (eggxplanationRw, eggxplanationRwTy) ← e.instantiateEqType eggRewrite
+    let (eggxplanationRw, _) ← e.instantiateEqType eggRewrite
     -- let (eggLhs, eggRhs) := if e.direction == EggRewriteDirection.Forward
     --      then (e.source, e.result)
     --      else (e.result, e.source)
@@ -825,7 +815,7 @@ elab "eggxplosion" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withM
     let rewriteResult <- (<- getMainGoal).rewrite
         (<- getMainTarget)
         eggxplanationRw
-        (occs := Occurrences.pos [e.position])
+        (config := { occs := Occurrences.pos [e.position] })
         -- The rewrite direction here is different from the direction of the
         -- explanation! The former is given by egg, the latter is what *we* gave
         -- to egg.
@@ -841,3 +831,5 @@ elab "eggxplosion" "[" rewriteNames:ident,* "]" c:(eggconfig)? : tactic => withM
   -- TODO: replace 'simp' with something that dispatches 'a=a' sanely.
   let _ <- simpGoal (<- getMainGoal) (<- Simp.Context.mkDefault)
   return ()
+
+macro "egg" : tactic => `(tactic| egg [])

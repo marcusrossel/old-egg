@@ -260,8 +260,6 @@ def Sexp.uncurry : Sexp → Sexp
   | .list ["ap", (.atom fname), args] => .list [s!"ap-{fname}", args.uncurry]
   | l@(.list _) => l
 
-#eval Sexp.uncurry (parseSingleSexp "(ap (ap mul (ap inv y)) (ap inv x))" |>.toOption |>.get!) |>.toString
-
 -- partial because of map..
 partial def Sexp.curry : Sexp → Sexp
   | a@(.atom _) => a
@@ -308,51 +306,3 @@ def unsimplifySExps : List Sexp →  VariableMapping → List Sexp
       λ e var => match mapping.lookup var with
         | none => e
         | some subexp => replaceTerm (Sexp.atom var) subexp e
-
-
-def ab := parseSingleSexp "(a b)" |>.toOption |>.get!
-def aab := parseSingleSexp "(a (a b))" |>.toOption |>.get!
-def c := Sexp.atom "c"
-def a := Sexp.atom "a"
-#eval ab.toString
-#eval replaceTerm ab c ab |>.toString
-#eval replaceTerm ab c aab |>.toString
-#eval replaceTerm a c aab |>.toString
-#eval replaceTerm ab c aab |> replaceTerm c ab |>.toString
-
-
-def realexample := parseSexpList "(ap (fvar (num (str anonymous _uniq) 547)) (ap (fvar (num (str anonymous _uniq) 547)) (fvar (num (str anonymous _uniq) 550)))) (fvar (num (str anonymous _uniq) 550)) (fvar (num (str anonymous _uniq) 549)) (ap (ap (fvar (num (str anonymous _uniq) 548)) (fvar (num (str anonymous _uniq) 550))) (ap (fvar (num (str anonymous _uniq) 547)) (fvar (num (str anonymous _uniq) 550)))) ?_uniq.562 (ap (ap (fvar (num (str anonymous _uniq) 548)) ?_uniq.562) (fvar (num (str anonymous _uniq) 549))) (ap (ap (fvar (num (str anonymous _uniq) 548)) (ap (fvar (num (str anonymous _uniq) 547)) ?_uniq.561)) ?_uniq.561) (fvar (num (str anonymous _uniq) 549)) (ap (ap (fvar (num (str anonymous _uniq) 548)) ?_uniq.558) (ap (ap (fvar (num (str anonymous _uniq) 548)) ?_uniq.559) ?_uniq.560)) (ap (ap (fvar (num (str anonymous _uniq) 548)) (ap (ap (fvar (num (str anonymous _uniq) 548)) ?_uniq.558) ?_uniq.559)) ?_uniq.560)" |>.toOption.get!
-def realexampleSimplified := simplifySexps realexample
-#eval realexampleSimplified.1.toString
-#eval realexampleSimplified.1.map (λ e => e.uncurry ) |>.map toString
-#eval (realexampleSimplified.1.map (λ e => e.uncurry.curry) |>.zip realexampleSimplified.1).map λ (a,b) => a == b
-
-#eval realexampleSimplified.2.map λ (s,sexp) => (s,sexp.toString)
-#eval realexampleSimplified.1.map (Sexp.unsimplify · realexampleSimplified.2) |>.zip realexample |>.map λ (a,b) => a == b
-def exp1 := parseSexpList "(a (a b)) (b (a b))" |>.toOption |>.get!
-def exp2 := parseSexpList "(c (a b)) ((a b) c)" |>.toOption |>.get!
-def exp3 := parseSexpList "(d ((a b) c)) (((a b) c) d)" |>.toOption |>.get!
-def simp1 := simplifySexps exp1
-def simp2 := simplifySexps exp2
-def simp3 := simplifySexps exp3
-
-#eval simp1.1 |>.map Sexp.toString
-#eval simp2.1 |>.map Sexp.toString
-#eval simp3.1 |>.map Sexp.toString
-
-#eval unsimplifySExps simp1.1 simp1.2 == exp1
-#eval unsimplifySExps simp2.1 simp2.2 == exp2
-#eval unsimplifySExps simp3.1 simp3.2 == exp3
-
-#eval aab.containsSubexpr a
-#eval aab.containsSubexpr ab
-#eval aab.containsSubexpr c
-
-#eval parseSexpList ""
-#eval parseSexpList "(a, b)"
-#eval parseSexpList "(a, "
-#eval parseSexpList "a)"
-#eval parseSexpList "a b c"
-#eval parseSexpList "(a b) (c d)"
-#eval parseSingleSexp "(a b)"
-#eval parseSingleSexp "(a (b c) d)"

@@ -1,25 +1,13 @@
 import Lake
 open Lake DSL
 
-require Std from git "https://github.com/leanprover/std4"@"529a6"
+package «egg-tactic»
 
-package «egg-tactic» {
-
-}
-
-def compileCargo (name : String) (manifestFile : FilePath)
- (cargo : FilePath := "cargo") : LogIO Unit := do
-  logInfo s!"Creating {name}"
-  proc {
-    cmd := cargo.toString
-    args := #["build", "--release", "--manifest-path", manifestFile.toString]
-  }
-
-def buildCargo (targetFile : FilePath) (manifestFile : FilePath) (targetDest : FilePath)
-(oFileJobs : Array (BuildJob FilePath)) : SchedulerM (BuildJob FilePath) :=
-  let name := targetFile.fileName.getD targetFile.toString
+def buildCargo
+    (pkg : Package) (targetFile : FilePath) (targetDest : FilePath)
+    (oFileJobs : Array (BuildJob FilePath)) : SpawnM (BuildJob FilePath) :=
   buildFileAfterDepArray targetFile oFileJobs fun _ => do
-    compileCargo name manifestFile
+    proc { cmd := "cargo", args := #["rustc", "--release", "--", "-C", "relocation-model=pic"], cwd := pkg.dir / "json-egg" }
     -- hack (and not very portable)
     createParentDirs targetDest
     proc {
@@ -27,23 +15,13 @@ def buildCargo (targetFile : FilePath) (manifestFile : FilePath) (targetDest : F
       args := #[targetFile.toString, targetDest.toString]
     }
 
--- @[default_target]
-target «egg-herbie» (pkg : Package) : FilePath := do
+target «egg-herbie» pkg : FilePath := do
   let buildDir := pkg.dir / "json-egg"
   let binFile := buildDir / "target" / "release" / "egg-herbie"
   let dest := pkg.dir / "utils" / "egg-herbie"
-  let manifestFile := buildDir / "Cargo.toml"
-  buildCargo binFile manifestFile dest #[]
+  buildCargo pkg binFile dest #[]
 
 @[default_target]
-lean_lib EggTactic{
+lean_lib EggTactic where
   roots := #[`EggTactic]
   precompileModules := true
-}
-  -- add configuration options here
-
---require «aesop» from git  "https://github.com/JLimperg/aesop" @ "3fb480b3d7b1e70e488e479e94875bb94d7c8ade"
--- require smt from git "https://github.com/ufmg-smite/lean-smt.git"@"main"
-
--- require mathlib from git "https://github.com/leanprover-community/mathlib4" @ "master"
-

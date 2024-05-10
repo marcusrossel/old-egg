@@ -1,0 +1,4 @@
+[submodule "batteries-tests"]
+	path = Tests/batteries
+	url = https://github.com/marcusrossel/batteries.git
+	branch = old-egg-tests

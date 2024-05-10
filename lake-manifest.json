@@ -1,9 +1,5 @@
-{"version": 4,
- "packagesDir": "lake-packages",
- "packages":
- [{"git":
-   {"url": "https://github.com/leanprover/std4",
-    "subDir?": null,
-    "rev": "529a6587a15f1a4ce22a96c422d90f5235b0fecd",
-    "name": "Std",
-    "inputRev?": "529a6"}}]}
+{"version": 7,
+ "packagesDir": ".lake/packages",
+ "packages": [],
+ "name": "«egg-tactic»",
+ "lakeDir": ".lake"}
